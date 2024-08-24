@@ -16,20 +16,27 @@ import (
 )
 
 func main() {
-	converter := md.NewConverter("", true, nil)
-
-    fp := filepicker.New()
-	fp.AllowedTypes = []string{".html"}
-	fp.CurrentDirectory, _ = os.UserHomeDir()
-
-	m := model{
-		filepicker: fp,
-	}
+    m := initialModel()
 	tm, _ := tea.NewProgram(&m).Run()
 	mm := tm.(model)
+    fileName := mm.selectedFile
+    markdown := doConvert(fileName)
+    fmt.Printf(markdown)   
+}
 
-	fileName := m.filepicker.Styles.Selected.Render(mm.selectedFile)
-    
+func initialModel() model {
+
+	fp := filepicker.New()
+	fp.AllowedTypes = []string{".html"}
+	fp.CurrentDirectory, _ = os.UserHomeDir()
+	return model{
+		filepicker: fp,
+	}
+}
+
+func doConvert(fileName string) string {
+	
+	converter := md.NewConverter("", true, nil)
     html := readFile(fileName) 
     
 	markdown, err := converter.ConvertString(html)
@@ -39,6 +46,7 @@ func main() {
 	}
 	
 	fmt.Println("md ->", markdown)
+	return markdown
 }
 
 func readFile(fileName string) string {
@@ -91,7 +99,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "ctrl+c", "q":
 			m.quitting = true
 			return m, tea.Quit
+		case "s":
+			return m, nil		
 		}
+		
 	case clearErrorMsg:
 		m.err = nil
 	}
@@ -128,7 +139,7 @@ func (m model) View() string {
 	} else if m.selectedFile == "" {
 		s.WriteString("Pick a file:")
 	} else {
-		s.WriteString("Selected file: " + m.filepicker.Styles.Selected.Render(m.selectedFile))
+    	s.WriteString("Selected file: " + m.filepicker.Styles.Selected.Render(m.selectedFile))
 	}
 	s.WriteString("\n\n" + m.filepicker.View() + "\n")
 	return s.String()
