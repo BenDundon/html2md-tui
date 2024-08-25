@@ -10,6 +10,8 @@ Google's Keep Takeout files are, for some god-forsaken reason, exported as HTML.
 
 Currently, this is only a TUI program. It is unable to just take input and give output, so it can't be used in scripts.
 
+There is also no error handling whatsoever, nor is there guidance on what keys to press.
+
 ## Installation
 
 See [INSTALL.md](./INSTALL.md)
