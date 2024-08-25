@@ -2,9 +2,9 @@ package main
 
 import (
 	"fmt"
-    "log"
     "os"
     "io"
+    "bufio"
 
     "strings"
 	"time"
@@ -13,6 +13,7 @@ import (
 	"github.com/charmbracelet/bubbles/filepicker"
 	"github.com/charmbracelet/bubbles/viewport"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	md "github.com/JohannesKaufmann/html-to-markdown"
 )
@@ -43,11 +44,16 @@ func main() {
 }
 
 func initialModel() model {
-
+    ti := textinput.New()
+	ti.Placeholder, _ = os.UserHomeDir()
+	ti.Focus()
+	ti.CharLimit = 156
+	ti.Width = 50
 	fp := filepicker.New()
 	fp.AllowedTypes = []string{".html"}
 	fp.CurrentDirectory, _ = os.UserHomeDir()
 	return model{
+		textInput: ti,
 		filepicker: fp,
 	}
 }
@@ -59,26 +65,19 @@ func doConvert(fileName string) string {
     
 	markdown, err := converter.ConvertString(html)
 
-	if err != nil {
-  		log.Fatal(err)
-	}
+	check(err)
 	
-	fmt.Println("md ->", markdown)
 	return markdown
 }
 
 func readFile(fileName string) string {
 	file, err := os.Open(fileName)
-	if err != nil {
-		log.Fatal(err)
-	}
+	check(err)
 
     // Write the file text somewhere else so we can close it
     fileText, err := io.ReadAll(file)
 
-    if err != nil {
-    	log.Fatal(err)
-    }
+    check(err)
 
     // File *Must* be manually closed
     file.Close()
@@ -86,6 +85,25 @@ func readFile(fileName string) string {
 	return string(fileText)
 }
 
+func saveFile(fileName string, content string) {
+	// Attempt to create the file
+	file, err := os.Create(fileName)
+    check(err)
+    defer file.Close()
+
+    // If creating worked, write the file
+	w := bufio.NewWriter(file)
+    _, err = w.WriteString(content)
+    check(err)
+    fmt.Printf("wrote %s\n", fileName)
+}
+
+// Handy helper function from https://gobyexample.com/writing-files
+func check(e error) {
+    if e != nil {
+        panic(e)
+    }
+}
 
 // Most of the following boilerplate (and some of Main()) 
 // is copied word-for-word from the Charm Bracelet examples here:
@@ -93,6 +111,7 @@ func readFile(fileName string) string {
 
 type model struct {
 	filepicker        filepicker.Model
+	textInput         textinput.Model
 	viewport          viewport.Model
 	selectedFile      string
 	markdownString    string
@@ -100,6 +119,8 @@ type model struct {
 	err               error
 	content           string
 	ready             bool
+	outputFile        string
+	saving            bool
 }
 
 type clearErrorMsg struct{}
@@ -111,7 +132,10 @@ func clearErrorAfter(t time.Duration) tea.Cmd {
 }
 
 func (m model) Init() tea.Cmd {
-	return m.filepicker.Init()
+	return tea.Batch(
+		m.filepicker.Init(),
+		textinput.Blink,
+	)
 }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -127,11 +151,17 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.quitting = true
 			return m, tea.Quit
 		case "s":
-			m.markdownString = doConvert(m.selectedFile)
-			m.viewport.SetContent(m.markdownString)
-			m.ready = true 
+			if !m.saving && !m.ready {
+				m.markdownString = doConvert(m.selectedFile)
+				m.viewport.SetContent(m.markdownString)
+				m.ready = true 				
+			}
 		case "enter":
 			if m.ready {
+				m.saving = true
+				m.ready = false
+			} else if m.saving {
+				saveFile(m.textInput.Value(), m.markdownString)
 				return m, tea.Quit
 			}
 		}
@@ -173,9 +203,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	}
 
-	m.filepicker, cmd = m.filepicker.Update(msg)
-	cmds = tea.Batch(cmds, cmd)
-	m.viewport, cmd = m.viewport.Update(msg)
+	if m.ready {	
+		m.viewport, cmd = m.viewport.Update(msg)
+	} else if m.saving {	
+		m.textInput, cmd = m.textInput.Update(msg)
+	} else {			
+		m.filepicker, cmd = m.filepicker.Update(msg)
+	}
 	cmds = tea.Batch(cmds, cmd)
 
 	// Did the user select a file?
@@ -200,7 +234,14 @@ func (m model) View() string {
 	if m.quitting {
 		return ""
 	}
-	if !m.ready {
+	if m.ready {
+		return fmt.Sprintf("%s\n%s\n%s", m.headerView(), m.viewport.View(), m.footerView())
+	} else if m.saving {
+		return fmt.Sprintf(
+		"Enter the Save Path:\n\n%s\n\n",
+		m.textInput.View(),
+	) + "\n"
+	} else {
 		var s strings.Builder
 		s.WriteString("\n  ")
 		if m.err != nil {
@@ -212,10 +253,7 @@ func (m model) View() string {
 		}
 		s.WriteString("\n\n" + m.filepicker.View() + "\n")
 		return s.String()
-	} else {
-		return fmt.Sprintf("%s\n%s\n%s", m.headerView(), m.viewport.View(), m.footerView())
-	}
-}
+	}}
 
 // --- End copied Text --
 
