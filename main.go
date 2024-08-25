@@ -11,17 +11,35 @@ import (
 	"errors"
 
 	"github.com/charmbracelet/bubbles/filepicker"
+	"github.com/charmbracelet/bubbles/viewport"
+	"github.com/charmbracelet/lipgloss"
 	tea "github.com/charmbracelet/bubbletea"
 	md "github.com/JohannesKaufmann/html-to-markdown"
 )
+
+const useHighPerformanceRenderer = false
+
+// Establishing styles
+var (
+	titleStyle = func() lipgloss.Style {
+		b := lipgloss.RoundedBorder()
+		b.Right = "├"
+		return lipgloss.NewStyle().BorderStyle(b).Padding(0, 1)
+	}()
+
+	infoStyle = func() lipgloss.Style {
+		b := lipgloss.RoundedBorder()
+		b.Left = "┤"
+		return titleStyle.BorderStyle(b)
+	}()
+)
+
 
 func main() {
     m := initialModel()
 	tm, _ := tea.NewProgram(&m).Run()
 	mm := tm.(model)
-    fileName := mm.selectedFile
-    markdown := doConvert(fileName)
-    fmt.Printf(markdown)   
+    fmt.Printf(mm.markdownString)   
 }
 
 func initialModel() model {
@@ -69,15 +87,19 @@ func readFile(fileName string) string {
 }
 
 
-// The following boilerplate (and some of Main()) 
-// is copied word-for-word from the Charm Bracelet example here:
-// https://github.com/charmbracelet/bubbletea/blob/master/examples/file-picker/main.go
+// Most of the following boilerplate (and some of Main()) 
+// is copied word-for-word from the Charm Bracelet examples here:
+// https://github.com/charmbracelet/bubbletea/blob/master/examples
 
 type model struct {
-	filepicker   filepicker.Model
-	selectedFile string
-	quitting     bool
-	err          error
+	filepicker        filepicker.Model
+	viewport          viewport.Model
+	selectedFile      string
+	markdownString    string
+	quitting          bool
+	err               error
+	content           string
+	ready             bool
 }
 
 type clearErrorMsg struct{}
@@ -93,6 +115,11 @@ func (m model) Init() tea.Cmd {
 }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	var (
+		cmd  tea.Cmd
+		cmds tea.Cmd
+	)
+	
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		switch msg.String() {
@@ -100,15 +127,56 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.quitting = true
 			return m, tea.Quit
 		case "s":
-			return m, nil		
+			m.markdownString = doConvert(m.selectedFile)
+			m.viewport.SetContent(m.markdownString)
+			m.ready = true 
+		case "enter":
+			if m.ready {
+				return m, tea.Quit
+			}
 		}
 		
 	case clearErrorMsg:
 		m.err = nil
+
+	case tea.WindowSizeMsg:
+		headerHeight := lipgloss.Height(m.headerView())
+		footerHeight := lipgloss.Height(m.footerView())
+		verticalMarginHeight := headerHeight + footerHeight
+
+		if m.ready {
+			// Since this program is using the full size of the viewport we
+			// need to wait until we've received the window dimensions before
+			// we can initialize the viewport. The initial dimensions come in
+			// quickly, though asynchronously, which is why we wait for them
+			// here.
+			m.viewport = viewport.New(msg.Width, msg.Height-verticalMarginHeight)
+			m.viewport.YPosition = headerHeight
+			m.viewport.HighPerformanceRendering = useHighPerformanceRenderer
+
+			// This is only necessary for high performance rendering, which in
+			// most cases you won't need.
+			//
+			// Render the viewport one line below the header.
+			m.viewport.YPosition = headerHeight + 1
+		} else {
+			m.viewport.Width = msg.Width
+			m.viewport.Height = msg.Height - verticalMarginHeight
+		}
+
+		if useHighPerformanceRenderer {
+			// Render (or re-render) the whole viewport. Necessary both to
+			// initialize the viewport and when the window is resized.
+			//
+			// This is needed for high-performance rendering only.
+			cmds = tea.Batch(cmds, viewport.Sync(m.viewport))
+		}
 	}
 
-	var cmd tea.Cmd
 	m.filepicker, cmd = m.filepicker.Update(msg)
+	cmds = tea.Batch(cmds, cmd)
+	m.viewport, cmd = m.viewport.Update(msg)
+	cmds = tea.Batch(cmds, cmd)
 
 	// Did the user select a file?
 	if didSelect, path := m.filepicker.DidSelectFile(msg); didSelect {
@@ -122,27 +190,54 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Let's clear the selectedFile and display an error.
 		m.err = errors.New(path + " is not valid.")
 		m.selectedFile = ""
-		return m, tea.Batch(cmd, clearErrorAfter(2*time.Second))
+		cmds = tea.Batch(cmds, tea.Batch(cmd, clearErrorAfter(2*time.Second)))
 	}
 
-	return m, cmd
+	return m, cmds
 }
 
 func (m model) View() string {
 	if m.quitting {
 		return ""
 	}
-	var s strings.Builder
-	s.WriteString("\n  ")
-	if m.err != nil {
-		s.WriteString(m.filepicker.Styles.DisabledFile.Render(m.err.Error()))
-	} else if m.selectedFile == "" {
-		s.WriteString("Pick a file:")
+	if !m.ready {
+		var s strings.Builder
+		s.WriteString("\n  ")
+		if m.err != nil {
+			s.WriteString(m.filepicker.Styles.DisabledFile.Render(m.err.Error()))
+		} else if m.selectedFile == "" {
+			s.WriteString("Pick a file:")
+		} else {
+    		s.WriteString("Selected file: " + m.filepicker.Styles.Selected.Render(m.selectedFile))
+		}
+		s.WriteString("\n\n" + m.filepicker.View() + "\n")
+		return s.String()
 	} else {
-    	s.WriteString("Selected file: " + m.filepicker.Styles.Selected.Render(m.selectedFile))
+		return fmt.Sprintf("%s\n%s\n%s", m.headerView(), m.viewport.View(), m.footerView())
 	}
-	s.WriteString("\n\n" + m.filepicker.View() + "\n")
-	return s.String()
 }
 
 // --- End copied Text --
+
+
+// Viewport functions
+
+func (m model) headerView() string {
+	title := titleStyle.Render("Markdown Preview")
+	line := strings.Repeat("─", max(0, m.viewport.Width-lipgloss.Width(title)))
+	return lipgloss.JoinHorizontal(lipgloss.Center, title, line)
+}
+
+func (m model) footerView() string {
+	info := infoStyle.Render(fmt.Sprintf("%3.f%%", m.viewport.ScrollPercent()*100))
+	line := strings.Repeat("─", max(0, m.viewport.Width-lipgloss.Width(info)))
+	return lipgloss.JoinHorizontal(lipgloss.Center, line, info)
+}
+
+func max(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
+}
+
