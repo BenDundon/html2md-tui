@@ -22,6 +22,8 @@ in the project root directory, and then run the binary from `/result/bin/html2md
 
 ## Installing on NixOS
 
+(Note: Currently this doesn't work)
+
 To install to `$PATH` on NixOS, copy `html2md-tui.nix` to `/etc/nixos/flakes/html2md-tui/flake.nix`. Then, add the following to your `configuration.nix`:
 
 ```nix
