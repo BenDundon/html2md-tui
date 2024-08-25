@@ -38,9 +38,7 @@ var (
 
 func main() {
     m := initialModel()
-	tm, _ := tea.NewProgram(&m).Run()
-	mm := tm.(model)
-    fmt.Printf(mm.markdownString)   
+	tea.NewProgram(&m).Run()
 }
 
 func initialModel() model {

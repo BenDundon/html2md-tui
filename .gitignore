@@ -1,2 +1,7 @@
 /gomod2nix-template
+
+# Nix build results
 /result
+
+# Built binary
+html2md-tui

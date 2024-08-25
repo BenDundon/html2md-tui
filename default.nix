@@ -13,7 +13,7 @@
 }:
 
 buildGoApplication {
-  pname = "html-to-markdown";
+  pname = "html2md-tui";
   version = "0.1";
   pwd = ./.;
   src = ./.;

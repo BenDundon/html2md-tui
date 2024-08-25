@@ -1,16 +1,19 @@
-module github.com/BenDundon/html-to-markdown
+module github.com/BenDundon/html2md-tui
 
 go 1.17
 
 require (
-	github.com/JohannesKaufmann/html-to-markdown v1.6.0 // indirect
+	github.com/JohannesKaufmann/html-to-markdown v1.6.0
+	github.com/charmbracelet/bubbles v0.19.0
+	github.com/charmbracelet/bubbletea v0.27.1
+	github.com/charmbracelet/lipgloss v0.13.0
+)
+
+require (
 	github.com/PuerkitoBio/goquery v1.9.2 // indirect
 	github.com/andybalholm/cascadia v1.3.2 // indirect
 	github.com/atotto/clipboard v0.1.4 // indirect
 	github.com/aymanbagabas/go-osc52/v2 v2.0.1 // indirect
-	github.com/charmbracelet/bubbles v0.19.0 // indirect
-	github.com/charmbracelet/bubbletea v0.27.1 // indirect
-	github.com/charmbracelet/lipgloss v0.13.0 // indirect
 	github.com/charmbracelet/x/ansi v0.1.4 // indirect
 	github.com/charmbracelet/x/input v0.1.0 // indirect
 	github.com/charmbracelet/x/term v0.1.1 // indirect
